@@ -23,5 +23,11 @@ It is especially helpful if your inverter is mounted away from the grid feed lin
 2. Update the `p1_meter_ip` in the YAML to match your P1 meter's IP address.
 3. Fill out your `secrets.yaml` with your Wi-Fi credentials.
 4. Flash the code to your ESP32 via ESPHome.
-5. Wire the RS485 A+ and B- terminals on the Waveshare board to the `Meter` RJ45 port on the Deye inverter (Usually Pin 1 / Pin 2, or Pin 7 / Pin 8 depending on the firmware).
-6. Set the Deye inverter to `Eastron` in the Advanced Meter settings.
+5. Wire the RS485 A+ and B- terminals on the Waveshare board to the `Meter-485` RJ45 port on the Deye inverter (Usually Pin 1 / Pin 2, or Pin 7 / Pin 8 depending on the firmware).
+   
+<img width="217" height="350" alt="image" src="https://github.com/user-attachments/assets/b3c2b27b-182f-463a-b204-1a053a1c1edf" /> <img width="250" height="392" alt="image" src="https://github.com/user-attachments/assets/99199dc5-e4da-4ad4-b6d4-a5a465dc2bac" />
+
+7. Set the Deye inverter to `Eastron` in the Advanced Meter settings. First `Read`, then set values, then `Setup`.
+<img width="300" height="625" alt="image" src="https://github.com/user-attachments/assets/f7bddade-b12e-426a-bc66-e1f55c3af69d" />
+
+8. After the steps were followed the Waveshare ESP32-S3-RS485-CAN should be flashing Blue and Green frantically which means the Modbus data is requested and provided  successfully.
