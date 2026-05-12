@@ -11,6 +11,7 @@ This allows the Deye inverter to perform rapid "Zero Export" throttling without 
 
 ## Why this is needed
 Deye inverters expect Modbus RTU communication over RS485 from an Eastron SDM630 meter (Slave ID 1). This ESP32 acts as a Modbus server, intercepting the Deye's requests and instantly replying with the live grid voltage, power, and lifetime energy totals fetched from the HomeWizard P1.
+It is especially helpful if your inverter is mounted away from the grid feed line which does not allow you to use the clamp meters and if you do not have space to mount a Modbus RS485 meter (or if you do not want to pull another wire through your house..)
 
 ## Features
 * **Correct Waveshare S3 Pins:** Pre-configured for the specific internal TX (17), RX (18), and Flow Control (21) pins of the Waveshare ESP32-S3 board.
