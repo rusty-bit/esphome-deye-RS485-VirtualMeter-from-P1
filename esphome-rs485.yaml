@@ -1,0 +1,204 @@
+substitutions:
+  device_ip_address: !secret IP_esphome-rs485
+  p1_meter_ip: "192.168.xxx.xxx"
+
+esphome:
+  name: esphome-rs485
+  friendly_name: Deye Virtual Meter
+
+esp32:
+  board: esp32-s3-devkitc-1
+  variant: esp32s3
+  framework:
+    type: esp-idf
+    version: recommended
+
+logger:
+  hardware_uart: USB_SERIAL_JTAG
+  baud_rate: 0
+  level: INFO  # Optimized for long-term stability
+  tx_buffer_size: 8192
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  min_auth_mode: WPA2
+  manual_ip:
+    static_ip: ${device_ip_address}
+    gateway: !secret gateway_address
+    subnet: !secret subnet_address
+  ap:
+    ssid: "ESPHome-Deye-Fallback"
+    password: !secret esphome_ap_password
+
+captive_portal:
+
+http_request:
+  useragent: esphome/device
+  timeout: 5s  # Critical: Increased to prevent Watchdog crashes
+
+# --- Corrected Waveshare ESP32-S3 RS485 Pins ---
+uart:
+  id: rs485_bus
+  tx_pin: GPIO17
+  rx_pin: GPIO18
+  baud_rate: 9600
+  stop_bits: 1
+
+modbus:
+  id: modbus_hub
+  uart_id: rs485_bus
+  role: server
+  flow_control_pin: GPIO21
+
+globals:
+  - id: start_time
+    type: uint32_t
+    restore_value: no
+
+sensor:
+  - platform: template
+    name: "Grid Voltage L1"
+    id: grid_v_l1
+    unit_of_measurement: "V"
+    device_class: voltage
+  - platform: template
+    name: "Grid Voltage L2"
+    id: grid_v_l2
+    unit_of_measurement: "V"
+    device_class: voltage
+  - platform: template
+    name: "Grid Voltage L3"
+    id: grid_v_l3
+    unit_of_measurement: "V"
+    device_class: voltage
+  - platform: template
+    name: "Grid Power L1"
+    id: grid_p_l1
+    unit_of_measurement: "W"
+    device_class: power
+  - platform: template
+    name: "Grid Power L2"
+    id: grid_p_l2
+    unit_of_measurement: "W"
+    device_class: power
+  - platform: template
+    name: "Grid Power L3"
+    id: grid_p_l3
+    unit_of_measurement: "W"
+    device_class: power
+  - platform: template
+    name: "Grid Power Total"
+    id: grid_p_total
+    unit_of_measurement: "W"
+    device_class: power
+    accuracy_decimals: 1
+  - platform: template
+    name: "Total Energy Import"
+    id: energy_import_total
+    unit_of_measurement: "kWh"
+    device_class: energy
+    state_class: total_increasing
+    accuracy_decimals: 3
+  - platform: template
+    name: "Total Energy Export"
+    id: energy_export_total
+    unit_of_measurement: "kWh"
+    device_class: energy
+    state_class: total_increasing
+    accuracy_decimals: 3
+  - platform: template
+    name: "P1 API Latency"
+    id: p1_latency
+    unit_of_measurement: "ms"
+    accuracy_decimals: 0
+  - platform: uptime
+    name: "Uptime"
+  - platform: wifi_signal
+    name: "WiFi Signal"
+
+# --- Virtual Meter Settings ---
+modbus_controller:
+  - id: sdm630_emulation
+    modbus_id: modbus_hub
+    address: 1 # Standard for Deye 3-Phase
+    server_registers:
+      - address: 0
+        value_type: FP32
+        read_lambda: "return id(grid_v_l1).state;"
+      - address: 2
+        value_type: FP32
+        read_lambda: "return id(grid_v_l2).state;"
+      - address: 4
+        value_type: FP32
+        read_lambda: "return id(grid_v_l3).state;"
+      - address: 12
+        value_type: FP32
+        read_lambda: "return id(grid_p_l1).state;"
+      - address: 14
+        value_type: FP32
+        read_lambda: "return id(grid_p_l2).state;"
+      - address: 16
+        value_type: FP32
+        read_lambda: "return id(grid_p_l3).state;"
+      - address: 52
+        value_type: FP32
+        read_lambda: "return id(grid_p_total).state;"
+      - address: 72
+        value_type: FP32
+        read_lambda: "return id(energy_import_total).state;"
+      - address: 74
+        value_type: FP32
+        read_lambda: "return id(energy_export_total).state;"
+
+# --- P1 Data Pulling Logic ---
+interval:
+  - interval: 2s
+    then:
+      - lambda: "id(start_time) = millis();"
+      - http_request.get:
+          url: http://${p1_meter_ip}/api/v1/data
+          # Prevents P1 meter socket exhaustion
+          request_headers:
+            Connection: close
+          capture_response: true
+          max_response_buffer_size: 8192
+          on_response:
+            then:
+              - lambda: |-
+                  id(p1_latency).publish_state(millis() - id(start_time));
+                  if (response->status_code != 200) {
+                    return;
+                  }
+                  json::parse_json(body, [](JsonObject root) -> bool {
+                    if (root.isNull()) return false;
+                    
+                    // Parse live power & voltage
+                    id(grid_v_l1).publish_state(root["active_voltage_l1_v"] | 0.0f);
+                    id(grid_v_l2).publish_state(root["active_voltage_l2_v"] | 0.0f);
+                    id(grid_v_l3).publish_state(root["active_voltage_l3_v"] | 0.0f);
+                    id(grid_p_l1).publish_state(root["active_power_l1_w"] | 0.0f);
+                    id(grid_p_l2).publish_state(root["active_power_l2_w"] | 0.0f);
+                    id(grid_p_l3).publish_state(root["active_power_l3_w"] | 0.0f);
+                    id(grid_p_total).publish_state(root["active_power_w"] | 0.0f);
+                    
+                    // Parse and sum lifetime energy import (T1 + T2)
+                    float import_t1 = root["total_power_import_t1_kwh"] | 0.0f;
+                    float import_t2 = root["total_power_import_t2_kwh"] | 0.0f;
+                    id(energy_import_total).publish_state(import_t1 + import_t2);
+
+                    // Parse and sum lifetime energy export (T1 + T2)
+                    float export_t1 = root["total_power_export_t1_kwh"] | 0.0f;
+                    float export_t2 = root["total_power_export_t2_kwh"] | 0.0f;
+                    id(energy_export_total).publish_state(export_t1 + export_t2);
+
+                    return true;
+                  });
